@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
-from os.path import join
+from os import makedirs
+from os.path import join, isdir
 
 from flask import url_for, current_app
 from inspire_dojson import marcxml2record
@@ -14,9 +15,13 @@ def save_package(package_name, file_data):
     # save delivered package for history
     save_path = current_app.config.get('ROBOTUPLOAD_FOLDER')
     if save_path:
+        if not isdir(save_path):
+            makedirs(save_path)
+
         package_path = join(save_path, package_name)
         with open(package_path, 'w') as f:
             f.write(file_data)
+            logger.info('Robotupload package saved path=%s' % package_path)
 
 
 def parse_received_package(file_data, package_name):

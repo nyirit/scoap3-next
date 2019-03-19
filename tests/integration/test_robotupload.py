@@ -38,7 +38,9 @@ def run_workflow(input_filename):
                 self.file_data = ''
                 return result
 
+        headers = {'User-Agent': 'invenio_webupload', 'Host': 'localhost'}
         environ = {'REMOTE_ADDR': '127.0.0.1'}
+        args = {}
         files = {
             'file': MockFile()
         }
@@ -67,8 +69,12 @@ def test_robotupload_cpc():
             real_http=True,
         )
 
+        workflows_count = Workflow.query.count()
         workflow = run_workflow('batchupload_20190102132204_4AEY6N_cpc.xml')
         assert workflow.status == WorkflowStatus.COMPLETED
+
+        # test if only one workflow was created
+        assert Workflow.query.count() - workflows_count == 1
 
 
 def test_robotupload_acta():
@@ -88,5 +94,9 @@ def test_robotupload_acta():
             real_http=True,
         )
 
+        workflows_count = Workflow.query.count()
         workflow = run_workflow('batchupload_20190125120350_PuCDSV_acta.xml')
         assert workflow.status == WorkflowStatus.COMPLETED
+
+        # test if only one workflow was created
+        assert Workflow.query.count() - workflows_count == 1
