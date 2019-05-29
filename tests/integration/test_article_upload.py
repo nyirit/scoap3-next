@@ -1,42 +1,14 @@
-import json
-import re
-from os import path
-
 import requests_mock
-from invenio_pidstore.models import PersistentIdentifier
-from invenio_records import Record
 from invenio_workflows import Workflow
-from mock import patch
 from workflow.engine_db import WorkflowStatus
-from workflow.errors import HaltProcessing
 
-from scoap3.modules.records.util import create_from_json
-from tests.responses import get_response_dir, read_hep_schema, read_titles_schema, read_response
-
-
-def _get_record_from_workflow(workflow):
-    assert len(workflow.objects) == 1
-    workflow_object = workflow.objects[0]
-
-    recid = workflow_object.data['control_number']
-    pid = PersistentIdentifier.get('recid', recid)
-
-    return Record.get_record(pid.object_uuid)
-
-
-def _read_hepcrawl_response_from_json(input_json_filename):
-    file_path = path.join(get_response_dir(), 'hepcrawl', input_json_filename)
-    with open(file_path, 'rt') as f:
-        return json.loads(f.read())
-
-
-def mock_halt(msg, eng):
-    raise HaltProcessing(msg)
+from tests.integration.utils import get_record_from_workflow, run_article_upload_with_data, run_article_upload_with_file
+from tests.responses import read_response, read_response_as_json
 
 
 def test_halt_record_without_authors():
     # read article data from json
-    json_data = _read_hepcrawl_response_from_json('aps2.json')
+    json_data = read_response_as_json('hepcrawl', 'aps2.json')
 
     # delete authors
     json_data.pop('authors')
@@ -46,14 +18,14 @@ def test_halt_record_without_authors():
         m.get('http://export.arxiv.org/api/query?search_query=id:1808.08188',
               content=read_response('article_upload', 'export.arxiv.org_api_query_search_query_id_1808.08188'))
 
-        workflow = run_workflow_with_data(json_data, m)
+        workflow = run_article_upload_with_data(json_data, m)
         assert workflow.status == WorkflowStatus.HALTED
         assert workflow.objects[0].extra_data['_message'] == 'No authors for article.'
 
 
 def test_halt_record_without_affiliations():
     # read article data from json
-    json_data = _read_hepcrawl_response_from_json('aps2.json')
+    json_data = read_response_as_json('hepcrawl', 'aps2.json')
 
     author_count = len(json_data.get('authors', ()))
     assert author_count > 0
@@ -67,7 +39,7 @@ def test_halt_record_without_affiliations():
         m.get('http://export.arxiv.org/api/query?search_query=id:1808.08188',
               content=read_response('article_upload', 'export.arxiv.org_api_query_search_query_id_1808.08188'))
 
-        workflow = run_workflow_with_data(json_data, m)
+        workflow = run_article_upload_with_data(json_data, m)
         assert workflow.status == WorkflowStatus.HALTED
         assert workflow.objects[0].extra_data['_message'] == (
             "No affiliations for author: {u'raw_name': u'We-Fu Chang', u'surname': u'Chang', u'given_names': u'We-Fu', "
@@ -77,7 +49,7 @@ def test_halt_record_without_affiliations():
 
 def test_halt_invalid_record():
     # read article data from json
-    json_data = _read_hepcrawl_response_from_json('aps2.json')
+    json_data = read_response_as_json('hepcrawl', 'aps2.json')
 
     # delete a required field to fail the validation
     json_data.pop('abstracts')
@@ -95,7 +67,7 @@ def test_halt_invalid_record():
         m.get('https://api.crossref.org/works/10.1103/PhysRevD.99.075025',
               content=read_response('article_upload', 'crossref.org_works_10.1103_PhysRevD.99.075025'))
 
-        workflow = run_workflow_with_data(json_data, m)
+        workflow = run_article_upload_with_data(json_data, m)
         assert workflow.status == WorkflowStatus.HALTED
         assert workflow.objects[0].extra_data['_message'].startswith("Validation error: u'abstracts' is a "
                                                                      "required property")
@@ -121,11 +93,11 @@ def test_record_update():
               content=read_response('article_upload', 'crossref.org_works_10.1103_PhysRevD.99.075025'))
 
         # read article data from json
-        json_data = _read_hepcrawl_response_from_json('aps2.json')
+        json_data = read_response_as_json('hepcrawl', 'aps2.json')
 
         # run first workflow
-        workflow1 = run_workflow_with_data(json_data, m)
-        record1 = _get_record_from_workflow(workflow1)
+        workflow1 = run_article_upload_with_data(json_data, m)
+        record1 = get_record_from_workflow(workflow1)
         assert workflow1.status == WorkflowStatus.COMPLETED
 
         # update article data
@@ -133,8 +105,8 @@ def test_record_update():
         updated_json_data['titles'][0]['title'] = 'Manually updated title'
 
         # run second workflow
-        workflow2 = run_workflow_with_data(updated_json_data, m)
-        record2 = _get_record_from_workflow(workflow2)
+        workflow2 = run_article_upload_with_data(updated_json_data, m)
+        record2 = get_record_from_workflow(workflow2)
         assert workflow2.status == WorkflowStatus.COMPLETED
 
         # control number should be the same, but article data has to be updated
@@ -163,11 +135,11 @@ def test_invalid_record_update_with_whole_workflow():
               content=read_response('article_upload', 'crossref.org_works_10.1103_PhysRevD.99.075025'))
 
         # read article data from json
-        json_data = _read_hepcrawl_response_from_json('aps2.json')
+        json_data = read_response_as_json('hepcrawl', 'aps2.json')
 
         # run first workflow
-        workflow1 = run_workflow_with_data(json_data, m)
-        record1 = _get_record_from_workflow(workflow1)
+        workflow1 = run_article_upload_with_data(json_data, m)
+        record1 = get_record_from_workflow(workflow1)
         assert workflow1.status == WorkflowStatus.COMPLETED
 
         # update article data
@@ -178,8 +150,8 @@ def test_invalid_record_update_with_whole_workflow():
         updated_json_data.pop('abstracts')
 
         # run second workflow
-        workflow2 = run_workflow_with_data(updated_json_data, m)
-        record2 = _get_record_from_workflow(workflow2)
+        workflow2 = run_article_upload_with_data(updated_json_data, m)
+        record2 = get_record_from_workflow(workflow2)
         assert workflow2.status == WorkflowStatus.HALTED
         assert workflow2.objects[0].extra_data['_message'].startswith("Validation error: u'abstracts' is a "
                                                                       "required property")
@@ -189,31 +161,6 @@ def test_invalid_record_update_with_whole_workflow():
         assert record1['titles'][0]['title'] == 'Alternative perspective on gauged lepton number and implications ' \
                                                 'for collider physics'
         assert record1['titles'][0]['title'] == record2['titles'][0]['title']
-
-
-def run_workflow_with_file(input_json_filename, mock_address):
-    """Uses input_json_filename to load hepcrawl response and to run article_upload workflow.
-    Returns the Workflow object."""
-
-    json_data = _read_hepcrawl_response_from_json(input_json_filename)
-    return run_workflow_with_data(json_data, mock_address)
-
-
-def run_workflow_with_data(input_json_data, mock_address):
-    """Runs article_upload workflow with input_json_data.
-    Returns the Workflow object."""
-
-    with patch('scoap3.modules.workflows.workflows.articles_upload.__halt_and_notify', mock_halt):
-        mock_address.register_uri('GET', '/schemas/hep.json', content=read_hep_schema())
-        mock_address.register_uri('GET', '/schemas/elements/titles.json', content=read_titles_schema())
-        mock_address.register_uri(
-            requests_mock.ANY,
-            re.compile('.*(indexer).*'),
-            real_http=True,
-        )
-        workflow_id = create_from_json({'records': [input_json_data]}, apply_async=False)[0]
-
-    return Workflow.query.get(workflow_id)
 
 
 def test_hindawi():
@@ -226,15 +173,14 @@ def test_hindawi():
               content=read_response('article_upload', 'hindawi.com_journals_ahep_2019_4123108.xml'))
         m.get('https://api.crossref.org/works/10.1155/2019/4123108',
               content=read_response('article_upload', 'crossref.org_works_10.1155_2019_4123108'))
-        workflow = run_workflow_with_file('hindawi.json', m)
+        workflow = run_article_upload_with_file('hindawi.json', m)
 
     assert workflow.status == WorkflowStatus.COMPLETED
     assert Workflow.query.count() - workflows_count == 1
 
-    record = _get_record_from_workflow(workflow)
+    record = get_record_from_workflow(workflow)
     assert len(record['_files']) == 2
     assert record['_oai']['sets'] == ['AHEP']
-    assert record['abstracts'][0]['value'] == ''
     assert record['acquisition_source']['method'] == 'Hindawi'
 
     assert record['authors'] == [
@@ -263,20 +209,13 @@ def test_hindawi():
          'surname': 'Hatzikoutelis'}
     ]
     assert record['collections'] == [{'primary': 'Advances in High Energy Physics'}]
-    assert record['copyright'] == [{'holder': '', 'material': '',
-                                    'statement': u'Copyright \xa9 2019 Theocharis Kosmas et al.', 'year': '2019'}]
+    assert record['copyright'] == [{'statement': u'Copyright \xa9 2019 Theocharis Kosmas et al.', 'year': '2019'}]
     assert record['dois'] == [{'value': '10.1155/2019/4123108'}]
     assert record['imprints'] == [{'date': '2019-02-17', 'publisher': 'Hindawi'}]
     assert record['license'] == [{'license': 'CC-BY-3.0', 'url': 'http://creativecommons.org/licenses/by/3.0/'}]
     assert record['page_nr'] == [3]
-    assert record['publication_info'] == [{'artid': '',
-                                           'journal_issue': '',
-                                           'journal_title': 'Advances in High Energy Physics',
-                                           'journal_volume': '',
-                                           'material': '',
-                                           'page_end': '',
+    assert record['publication_info'] == [{'journal_title': 'Advances in High Energy Physics',
                                            'page_start': '4123108',
-                                           'pubinfo_freetext': '',
                                            'year': 2019}]
     assert record['titles'][0]['title'] == 'Neutrino Physics in the Frontiers of Intensities and Very ' \
                                            'High Sensitivities 2018'
@@ -292,12 +231,12 @@ def test_hindawi2():
               content=read_response('article_upload', 'hindawi.com_journals_ahep_2014_191960.xml'))
         m.get('https://api.crossref.org/works/10.1155/2014/191960',
               content=read_response('article_upload', 'crossref.org_works_10.1155_2014_191960'))
-        workflow = run_workflow_with_file('hindawi2.json', m)
+        workflow = run_article_upload_with_file('hindawi2.json', m)
 
     assert workflow.status == WorkflowStatus.COMPLETED
     assert Workflow.query.count() - workflows_count == 1
 
-    record = _get_record_from_workflow(workflow)
+    record = get_record_from_workflow(workflow)
     assert len(record['_files']) == 2
     assert record['_oai']['sets'] == ['AHEP']
     assert record['abstracts'][0]['value'] == 'In the last decades, a very [...] solutions in the near future.'
@@ -353,20 +292,13 @@ def test_hindawi2():
         }
     ]
     assert record['collections'] == [{'primary': 'Advances in High Energy Physics'}]
-    assert record['copyright'] == [{'holder': '', 'material': '',
-                                    'statement': 'Copyright 2014 G. Bellini et al.', 'year': '2014'}]
+    assert record['copyright'] == [{'statement': 'Copyright 2014 G. Bellini et al.', 'year': '2014'}]
     assert record['dois'] == [{'value': '10.1155/2014/191960'}]
     assert record['imprints'] == [{'date': '2014-01-20', 'publisher': 'Hindawi Publishing Corporation'}]
     assert record['license'] == [{'license': 'CC-BY-3.0', 'url': 'http://creativecommons.org/licenses/by/3.0/'}]
     assert record['page_nr'] == [28]
-    assert record['publication_info'] == [{'artid': '',
-                                           'journal_issue': '',
-                                           'journal_title': 'Advances in High Energy Physics',
-                                           'journal_volume': '',
-                                           'material': '',
-                                           'page_end': '',
+    assert record['publication_info'] == [{'journal_title': 'Advances in High Energy Physics',
                                            'page_start': '191960',
-                                           'pubinfo_freetext': '',
                                            'year': 2014}]
     assert record['titles'][0]['title'] == 'Neutrino Oscillations'
 
@@ -385,12 +317,12 @@ def test_aps():
                        content=read_response('article_upload', 'harvest.aps.org_PhysRevD.99.045009.xml'))
         m.get('https://api.crossref.org/works/10.1103/PhysRevD.99.045009',
               content=read_response('article_upload', 'crossref.org_works_10.1103_PhysRevD.99.045009'))
-        workflow = run_workflow_with_file('aps.json', m)
+        workflow = run_article_upload_with_file('aps.json', m)
 
     assert workflow.status == WorkflowStatus.COMPLETED
     assert Workflow.query.count() - workflows_count == 1
 
-    record = _get_record_from_workflow(workflow)
+    record = get_record_from_workflow(workflow)
     assert len(record['_files']) == 2
     assert record['_oai']['sets'] == ['PRD']
     assert record['abstracts'][0]['value'] == (
@@ -426,20 +358,15 @@ def test_aps():
          'surname': 'Helset'}
     ]
     assert record['collections'] == [{'primary': 'HEP'}, {'primary': 'Citeable'}, {'primary': 'Published'}]
-    assert record['copyright'] == [{'holder': '', 'material': '',
-                                    'statement': 'Published by the American Physical Society', 'year': '2019'}]
+    assert record['copyright'] == [{'statement': 'Published by the American Physical Society', 'year': '2019'}]
     assert record['dois'] == [{'value': '10.1103/PhysRevD.99.045009'}]
     assert record['imprints'] == [{'date': '2019-02-19', 'publisher': 'APS'}]
     assert record['license'] == [{'license': 'CC-BY-4.0', 'url': 'https://creativecommons.org/licenses/by/4.0/'}]
     assert record['page_nr'] == [6]
-    assert record['publication_info'] == [{'artid': '',
-                                           'journal_issue': '4',
+    assert record['publication_info'] == [{'journal_issue': '4',
                                            'journal_title': 'Physical Review D',
                                            'journal_volume': '99',
                                            'material': 'article',
-                                           'page_end': '',
-                                           'page_start': '',
-                                           'pubinfo_freetext': '',
                                            'year': 2019}]
     assert record['titles'][0]['title'] == 'New factorization relations for nonlinear sigma model amplitudes'
 
@@ -458,12 +385,12 @@ def test_aps_with_collaboration():
                        content=read_response('article_upload', 'harvest.aps.org_PhysRevD.97.012001.xml'))
         m.get('https://api.crossref.org/works/10.1103/PhysRevD.97.012001',
               content=read_response('article_upload', 'crossref.org_works_10.1103_PhysRevD.97.012001'))
-        workflow = run_workflow_with_file('aps3.json', m)
+        workflow = run_article_upload_with_file('aps3.json', m)
 
     assert workflow.status == WorkflowStatus.COMPLETED
     assert Workflow.query.count() - workflows_count == 1
 
-    record = _get_record_from_workflow(workflow)
+    record = get_record_from_workflow(workflow)
     assert record['collaborations'] == [{"value": "T2K Collaboration"}]
 
 
@@ -473,12 +400,12 @@ def test_elsevier():
     with requests_mock.Mocker() as m:
         m.get('https://api.crossref.org/works/10.1016/j.nuclphysb.2018.07.004',
               content=read_response('article_upload', 'crossref.org_works_10.1016_j.nuclphysb.2018.07.004'))
-        workflow = run_workflow_with_file('elsevier/elsevier.json', m)
+        workflow = run_article_upload_with_file('elsevier/elsevier.json', m)
 
     assert workflow.status == WorkflowStatus.COMPLETED
     assert Workflow.query.count() - workflows_count == 1
 
-    record = _get_record_from_workflow(workflow)
+    record = get_record_from_workflow(workflow)
     assert len(record['_files']) == 2
     assert record['_oai']['sets'] == ['NPB']
     assert record['abstracts'][0]['value'] == (
@@ -495,18 +422,13 @@ def test_elsevier():
                                   'given_names': 'Manfred',
                                   'surname': 'Salmhofer'}]
     assert record['collections'] == [{u'primary': u'Nuclear Physics B'}]
-    assert record['copyright'] == [{'holder': 'The Author', 'material': '', 'statement': 'The Author', 'year': '2018'}]
+    assert record['copyright'] == [{'holder': 'The Author', 'statement': 'The Author', 'year': '2018'}]
     assert record['dois'] == [{'value': '10.1016/j.nuclphysb.2018.07.004'}]
     assert record['imprints'] == [{'date': '2018-07-04', 'publisher': 'Elsevier'}]
     assert record['license'] == [{'license': 'CC-BY-3.0', 'url': 'http://creativecommons.org/licenses/by/3.0/'}]
     assert record['publication_info'] == [{'artid': '14394',
-                                           'journal_issue': '',
                                            'journal_title': 'Nuclear Physics B',
-                                           'journal_volume': '',
                                            'material': 'article',
-                                           'page_end': '',
-                                           'page_start': '',
-                                           'pubinfo_freetext': '',
                                            'year': 2018}]
     assert record['titles'][0]['title'] == u'Renormalization in condensed matter: Fermionic systems \u2013 ' \
                                            u'from mathematics to materials'
@@ -520,12 +442,12 @@ def test_springer():
               content=read_response('article_upload', 'export.arxiv.org_api_query_search_query_id:1810.09837'))
         m.get('https://api.crossref.org/works/10.1140/epjc/s10052-019-6572-3',
               content=read_response('article_upload', 'crossref.org_works_10.1140_epjc_s10052-019-6572-3'))
-        workflow = run_workflow_with_file('springer/springer.json', m)
+        workflow = run_article_upload_with_file('springer/springer.json', m)
 
     assert workflow.status == WorkflowStatus.COMPLETED
     assert Workflow.query.count() - workflows_count == 1
 
-    record = _get_record_from_workflow(workflow)
+    record = get_record_from_workflow(workflow)
     assert len(record['_files']) == 2
     assert record['_oai']['sets'] == ['EPJC']
     assert record['abstracts'][0]['value'] == (
@@ -566,8 +488,7 @@ def test_springer():
          'surname': u'Trawi\u0144ski'}
     ]
     assert record['collections'] == [{'primary': 'European Physical Journal C'}]
-    assert record['copyright'] == [{'holder': 'The Author(s)', 'material': '',
-                                    'statement': '', 'year': '2019'}]
+    assert record['copyright'] == [{'holder': 'The Author(s)', 'year': '2019'}]
     assert record['dois'] == [{'value': '10.1140/epjc/s10052-019-6572-3'}]
     assert record['imprints'] == [{'date': '2019-01-29', 'publisher': 'Springer'}]
     assert record['license'] == [{'license': 'CC-BY-4.0', 'url': 'https://creativecommons.org/licenses//by/4.0'}]
@@ -579,7 +500,6 @@ def test_springer():
                                            'material': 'article',
                                            'page_end': '25',
                                            'page_start': '1',
-                                           'pubinfo_freetext': '',
                                            'year': 2019}]
     assert record['titles'][0]['title'] == 'Revisiting the mechanical properties of the nucleon'
 
@@ -592,12 +512,12 @@ def test_oup():
               content=read_response('article_upload', 'export.arxiv.org_api_query_search_query_id:1611.10151'))
         m.get('https://api.crossref.org/works/10.1093/ptep/pty143',
               content=read_response('article_upload', 'crossref.org_works_10.1093_ptep_pty143'))
-        workflow = run_workflow_with_file('oup/oup.json', m)
+        workflow = run_article_upload_with_file('oup/oup.json', m)
 
     assert workflow.status == WorkflowStatus.COMPLETED
     assert Workflow.query.count() - workflows_count == 1
 
-    record = _get_record_from_workflow(workflow)
+    record = get_record_from_workflow(workflow)
     assert len(record['_files']) == 3
     assert record['_oai']['sets'] == ['PTEP']
     assert record['abstracts'][0]['value'] == (
@@ -636,8 +556,7 @@ def test_oup():
          'surname': 'Hendi'}
     ]
     assert record['collections'] == [{'primary': 'Progress of Theoretical and Experimental Physics'}]
-    assert record['copyright'] == [{'holder': '', 'material': '',
-                                    'statement': u'\xa9  The Author(s) 2019. Published by Oxford University Press on '
+    assert record['copyright'] == [{'statement': u'\xa9  The Author(s) 2019. Published by Oxford University Press on '
                                                  'behalf of the Physical Society of Japan.',
                                     'year': '2019'}]
     assert record['dois'] == [{'value': '10.1093/ptep/pty143'}]
@@ -649,9 +568,6 @@ def test_oup():
                                            'journal_title': 'Progress of Theoretical and Experimental Physics',
                                            'journal_volume': '2019',
                                            'material': 'article',
-                                           'page_end': '',
-                                           'page_start': '',
-                                           'pubinfo_freetext': '',
                                            'year': 2019}]
     assert record['titles'][0]['title'] == u'Entropy spectrum of charged BTZ black holes in' \
                                            u' massive gravity\u2019s rainbow'

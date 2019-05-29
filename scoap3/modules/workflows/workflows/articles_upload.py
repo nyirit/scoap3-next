@@ -29,14 +29,13 @@ import logging
 from StringIO import StringIO
 
 from datetime import datetime
-from dateutil.parser import parse as parse_date
 from flask import url_for, current_app
+from inspire_dojson.utils import strip_empty_values
 from inspire_schemas.utils import validate
 from inspire_utils.record import get_value
 
 from invenio_db import db
 from invenio_files_rest.models import Bucket
-from invenio_indexer.api import RecordIndexer
 from invenio_mail.api import TemplatedMessage
 from invenio_oaiserver.minters import oaiid_minter
 from invenio_pidstore.errors import PIDAlreadyExists
@@ -115,7 +114,14 @@ def add_nations(obj, eng):
                 affiliation['value'])
 
 
-def clean_metadata(obj, eng):
+def remove_orcid_prefix(obj, eng):
+    orcid_prefix = 'orcid:'
+    for author in obj.data.get('authors', ()):
+        if 'orcid' in author and author['orcid'].lower().startswith(orcid_prefix):
+            author['orcid'] = author['orcid'][len(orcid_prefix):]
+
+
+def delete_unwanted_fields(obj, eng):
     """Delete unwanted fields"""
 
     keys_to_delete = (
@@ -126,6 +132,10 @@ def clean_metadata(obj, eng):
 
     for key in keys_to_delete:
         obj.data.pop(key, None)
+
+
+def delete_empty_fields(obj, eng):
+    obj.data = strip_empty_values(obj.data)
 
 
 def is_record_in_db(obj, eng):
@@ -147,8 +157,6 @@ def set_springer_source_if_needed(obj):
 def store_record(obj, eng):
     """Stores record in database"""
     set_springer_source_if_needed(obj)
-
-    obj.data['record_creation_year'] = parse_date(obj.data['record_creation_date']).year
 
     try:
         record = Record.create(obj.data, id_=None)
@@ -197,7 +205,6 @@ def update_record(obj, eng):
     # preserving original creation date
     creation_date = existing_record['record_creation_date']
     obj.data['record_creation_date'] = creation_date
-    obj.data['record_creation_year'] = parse_date(creation_date).year
     existing_record.clear()
     existing_record.update(obj.data)
 
@@ -371,19 +378,6 @@ def validate_record(obj, eng):
         __halt_and_notify('SchemaError during record validation! %s' % err, eng)
 
 
-def index_record(obj, eng):
-    """
-    Index the record.
-
-    It only should be indexed when every other step finished successfully.
-    """
-
-    recid = obj.data['control_number']
-    pid = PersistentIdentifier.get('recid', recid)
-    indexer = RecordIndexer()
-    indexer.index_by_id(pid.object_uuid)
-
-
 STORE_REC = [
     IF_ELSE(
         is_record_in_db,
@@ -405,12 +399,13 @@ class ArticlesUpload(object):
         set_schema,
         add_arxiv_category,
         add_nations,
-        clean_metadata,
+        remove_orcid_prefix,
+        delete_unwanted_fields,
+        delete_empty_fields,
         build_files_data,
         STORE_REC,
         attach_files,
         add_oai_information,
-        index_record,
         check_compliance,
         validate_record,
     ]
