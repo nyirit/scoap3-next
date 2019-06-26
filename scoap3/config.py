@@ -61,6 +61,7 @@ SEARCH_ELASTIC_HOSTS = 'localhost'
 
 RECORDS_REST_ENDPOINTS = dict(
     recid=dict(
+        default_endpoint_prefix=True,
         pid_type='recid',
         pid_minter='scoap3_minter',
         pid_fetcher='recid',
@@ -76,7 +77,7 @@ RECORDS_REST_ENDPOINTS = dict(
                                  ':json_v1_search'),
         },
         list_route='/records/',
-        item_route='/records/<pid_value>',
+        item_route='/records/<pid(recid):pid_value>',
         default_media_type='application/json',
         max_result_window=50000,
         read_permission_factory_imp="scoap3.modules.records.permissions:record_read_permission_factory"
@@ -632,6 +633,9 @@ ARTICLE_CHECK_HAS_TO_BE_HEP = (
 )
 """List of journals in which articles need to have 'hep-*' primary arXiv category."""
 
+ARTICLE_CHECK_IGNORE_TIME = timedelta(hours=48)
+"""An article will only be considered missing if it was published at least ARTICLE_CHECK_IGNORE_TIME ago."""
+
 PARTNER_COUNTRIES = ["Australia", "Austria", "Belgium", "Canada", "China", "CERN",
                      "Czech Republic", "Denmark", "Finland", "France", "Germany",
                      "Greece", "Hong-Kong", "Hungary", "Iceland", "Israel",
@@ -834,8 +838,6 @@ FILES_REST_PERMISSION_FACTORY = 'scoap3.modules.records.permissions:files_permis
 # ##################### Robotupload ############################
 ROBOTUPLOAD_FOLDER = '/tmp/robotupload'
 ROBOTUPLOAD_ALLOWED_USERS = {'127.0.0.1': ['ALL'], }
-
-ROBOTUPLOAD_ALLOWED_EXTENSIONS = ['xml']
 
 JOURNAL_PUBLISHER_MAPPING = {
     'Acta Physica Polonica B': 'Jagiellonian University',
