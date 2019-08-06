@@ -98,6 +98,9 @@ def add_arxiv_category(obj, eng):
 
             if 'categories' not in element:
                 categories = get_arxiv_categories(arxiv_id)
+                if not categories:
+                    __halt_and_notify('Could not determine arXiv category based on id.', eng)
+
                 element['categories'] = categories
 
 
@@ -263,6 +266,9 @@ def build_files_data(obj, eng):
             {'url': 'http://downloads.hindawi.com/journals/ahep/{0}.pdf'.format(doi_part),
              'name': '{0}.pdf'.format(doi),
              'filetype': 'pdf'},
+            {'url': 'http://downloads.hindawi.com/journals/ahep/{0}.a.pdf'.format(doi_part),
+             'name': '{0}.a.pdf'.format(doi),
+             'filetype': 'pdf/a'},
             {'url': 'http://downloads.hindawi.com/journals/ahep/{0}.xml'.format(doi_part),
              'name': '{0}.xml'.format(doi),
              'filetype': 'xml'}
@@ -306,7 +312,13 @@ def attach_files(obj, eng):
 
         for file_ in obj.extra_data['files']:
             if file_['url'].startswith('http'):
-                data = requests_retry_session().get(file_['url'], headers=file_.get('headers', {}))
+                headers = file_.get('headers', {})
+                data = requests_retry_session().get(file_['url'], headers=headers)
+
+                if data.status_code != 200:
+                    __halt_and_notify("Error during acquiring files.\nHTTP status: %d\nUrl: %s\nHeaders:%s" % (
+                        data.status_code, file_['url'], headers), eng)
+
                 f = StringIO(data.content)
             else:
                 f = open(file_['url'])
