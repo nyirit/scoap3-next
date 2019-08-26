@@ -290,6 +290,7 @@ def build_files_data(obj, eng):
             for known_ext in known_extensions:
                 if known_ext in document['key']:
                     ext = known_ext
+                    break
 
             if ext not in known_extensions:
                 __halt_and_notify('Invalid file type: %s' % document['key'], eng)
@@ -297,7 +298,7 @@ def build_files_data(obj, eng):
             files.append(
                 {
                     'url': document['url'],
-                    'name': doi,
+                    'name': "%s.%s" % (doi, ext),
                     'filetype': ext
                 }
             )

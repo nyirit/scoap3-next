@@ -48,9 +48,6 @@ BASE_TEMPLATE = "scoap3_theme/page.html"
 ADMIN_BASE_TEMPLATE = 'scoap3_theme/page_admin.html'
 SETTINGS_TEMPLATE = "invenio_theme/page_settings.html"
 
-# Celery
-BROKER_URL = "amqp://scoap3:bibbowling@scoap3-mq1.cern.ch:15672/scoap3"
-
 # Elasticsearch
 INDEXER_DEFAULT_INDEX = "scoap3-records-record"
 INDEXER_DEFAULT_DOC_TYPE = "scoap3-records-record"
@@ -910,3 +907,9 @@ TOOL_ELASTICSEARCH_PAGE_SIZE = 100
 
 TOOL_COMPRESS_ATTACHMENT = True
 """If True, attachments sent via email will be compressed using gzip."""
+
+SITEMAP_URL_SCHEME = 'http'
+"""URL scheme used for generating sitemap files."""
+
+SITEMAP_MAX_URL_COUNT = 10000
+"""Max URL count per sitemap page."""
